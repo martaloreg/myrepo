@@ -1,0 +1,286 @@
+```{r}
+library(sf)
+library(tidyverse)
+library(rsample)
+library(ggplot2)
+library(gridExtra)
+library(mclust)
+library(rpart)
+library(rpart.plot)
+library(caret)
+library(ipred)
+library(Metrics)
+library(randomForest)
+library(ranger)
+library(RcppRoll)
+library(ggrepel)
+library(cowplot)
+library(gridExtra)
+library(grid)
+library(ggpubr)
+library(terra)
+library(rlist)
+##LIBARY TRIAL
+```
+
+```{r listImages}
+#Tor
+#path <- "data/PrefFlow_Kenya/Data/Enhanced images"
+
+#Aida and me
+path <- "../data/Enhanced images/"
+
+img.list <- lapply(list.files(path, pattern = ".*\\.tif$", full.names = T, recursive = T), rast) ## Multiband/stack
+img.list.str <- list.files(path, pattern = ".*\\.tif$", full.names = T, recursive = T)
+
+# name list elements with the image names
+gc_file <- list.files(path = path, pattern = "*.tif")
+names(img.list) <- gc_file
+
+img.list[1:10]
+```
+
+### Calculate band ratios, etc and add to stack
+```{r bandmathOneImage}
+img.proc <- img.list[[5]]
+names(img.proc) <- c("R","G","B","sum")
+
+img.proc$RBI <- (img.proc[[3]]-img.proc[[1]]) / (img.proc[[3]]+img.proc[[1]]+1)
+img.proc$RGI <- (img.proc[[2]]-img.proc[[1]]) / (img.proc[[2]]+img.proc[[1]]+1)
+img.proc$GBI <- (img.proc[[2]]-img.proc[[3]]) / (img.proc[[2]]+img.proc[[3]]+1)
+img.proc$RGBI <- (img.proc[[3]]+img.proc[[2]]-img.proc[[1]]) / (img.proc[[3]]+img.proc[[2]]+img.proc[[1]]+1)
+
+image(img.proc$RBI, col=rainbow(256))
+image(img.proc$RGI, col=rainbow(256))
+image(img.proc$RGBI, col=rainbow(256))#THIS IS THE BEST ONE
+image(img.proc$GBI, col=rainbow(256))
+
+
+
+```
+
+Do the same for all the StackRaster objects in the list. In img.list[[i]][[j]], i is ith image in the list (out of 142 images) and j is the jth column or band within image i. Bands: 1 = R, 2= G, 3 = B, 4 = SUM(R,G,B).
+
+Since my compuer was not running for all images, we run it in Aida's computer and the list resulting (all images with RBI, RGI, GBI, RGBI) has been exported in a RData file. 
+
+```{r BandmathAllImages}
+
+
+for (i in 1:142) {
+ img.list[[i]]$RBI <- (img.list[[i]][[3]]-img.list[[i]][[1]]) / (img.list[[i]][[3]]+img.list[[i]][[1]]+1)
+ }
+
+for (i in 1:142) {
+ img.list[[i]]$RGI <- (img.list[[i]][[3]]-img.list[[i]][[1]]) / (img.list[[i]][[2]]+img.list[[i]][[1]]+1)
+}
+
+for (i in 1:142) {
+ img.list[[i]]$GBI <- (img.list[[i]][[2]]-img.list[[i]][[3]]) / (img.list[[i]][[2]]+img.list[[i]][[3]]+1)
+}
+
+ for (i in 1:142) {
+ img.list[[i]]$RGBI <- (img.list[[i]][[3]]+img.list[[i]][[2]]-img.list[[i]][[1]]) / (img.list[[i]][[3]]+img.list[[i]][[2]]+img.list[[i]][[1]]+1)
+ 
+} #I run only this as it it the best and running all the other together it crushes
+
+
+#check
+img.list[[5]]
+
+#save(img.list, file = "../data/List_bands_indices.RData")
+
+```
+
+##Random points sample_one image. 
+here I try to run the random sampling method for one image to check how the spatRaster selection works. with this function it is possible also to choose how we want that the sampling points are saved, meaning as points, df, raster or others.
+In this case I prefer to have them as df, since for the next steps we will use a df.
+
+in this case there is no need of a division into slices, as the spatSample() function does it already on its own
+
+```{r SampONEImage}
+
+samp.image <- spatSample(img.list[[4]], 4000, method = "random", as.raster =TRUE, xy=TRUE)
+
+image(samp.image$RGBI, col=rainbow(256))
+samp.image
+size(samp.image)
+
+#if I want as points
+samp.image.1 <- spatSample(img.list[[4]], 250, method = "random", as.points=TRUE, values =TRUE,   xy=TRUE)
+samp.image.1
+write_csv(samp.image.1, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image.1.csv")
+
+#if I want as df already
+
+set.seed(123) #THIS IS IMPORTANT, as it alloweds to select always the same randompoints at this stage. having always the same random points selection helps with the check and further classification of stained-nonstained
+samp.image.3 <- spatSample(img.list[[4]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)
+
+samp.image.3 <- set_names(samp.image.3, c("x","y","R","G","B", "sum", "RGBI"))
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image.3.csv")
+
+samp.image.4 <- spatSample(img.list[[5]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)
+samp.image.4 <- set_names(samp.image.4, c("x","y","R","G","B", "sum", "RGBI"))
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image_K_4_7.csv")
+
+
+
+```
+Create a list with random points sampled from each image. 
+We want to select random points only from the RGBI indice, and not the others.
+The function used to create sampling points is spatSample. It alloweds to choose the method of point sampling (in this care we want it random), the number of points 
+```{r SampLISTImage}
+library(rlist)
+#list_band_indices<- load("List_bands_indices.RData" )
+#load("List_bands_indices.RData")
+#str(img.list[1])
+
+
+#how to read these data???https://stackoverflow.com/questions/31893844/how-can-i-save-a-list-to-a-file-and-read-it-in-again-in-r
+
+
+samp.list1 <-  img.list %>%
+  purrr::map(~spatSample(., 
+             size =4000, 
+              method = "random",
+             as.points=TRUE,
+             values = TRUE,
+             xy=TRUE
+             ))
+
+#I can transform directly into df
+samp.list3<-  img.list %>%
+  purrr::map(~spatSample(., 
+             size =250, 
+              method = "random",
+             as.df=TRUE,
+             values = TRUE,
+             xy=TRUE
+             ))
+samp.list3 <- samp.list3 %>%
+  purrr::map(~set_names(., c("x","y","R","G","B", "sum", "RGBI")))
+
+rlist::list.save(samp.list3, )
+
+#Check image
+#image(samp.list[[1]]$RGBI, col=rainbow(256))
+#image(samp.list[[5]]$RGBI, col=rainbow(256))
+
+samp.list[[5]]
+show(1)
+
+```
+### Raster values to array: convert the spatSample into array/matrix with values()
+
+N.B: this part works only if you have still a list of spatRaster. in My case, when running the random point selection with spat.Sample, I choose to have directly a df as output, therefore this is not necessary.
+
+```{r RasterToArray}
+
+samp.list.mat <- samp.list %>%
+  purrr::map(values) 
+
+#one other way might be to transform the spatRaster into DF:
+
+samp.list.mat_df<- samp.list.mat%>%
+  purrr::map(as.data.frame)
+
+#change bands names in the df list
+
+samp.list.mat_df<- samp.list.mat_df%>%
+  purrr::map(~set_names(., c("R","G","B", "sum", "RGBI")))
+                    
+#VERIFY
+
+samp.list.mat[[60]][1:10,]
+
+samp.list.mat_df[[4]][1:10,]
+
+#img.proc.mat <- values(img.proc)
+#img.proc.mat[1:10,]
+```
+
+##Apply Mclust to df
+
+try at first to use Mclust on one image
+
+
+```{r Mclust one image}
+
+# First I give an ID to all the points in the than_15_4_sample df
+
+samp.image.3 <-  samp.image.3 %>%
+  mutate (id = row.names(samp.image.3))
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag3_ID.csv")
+
+str(samp.image.3)#this to see if actually the image was saved as df: correct
+
+
+
+#Apply mCLust. Model 3. I only use the RGBI index. No location (coordinates or slices). 2 clusters
+
+samp.image.3.mc3 <- Mclust(samp.image.3[["RGBI"]], G=2)
+
+#one other way to go, but the outcome is the same:
+#samp.image.3.mc3 <- Mclust(samp.image.3[["RGBI"]] %>%
+ #                        select(7), 
+  #                      G = 2) #when I apply Mclust, the result is a list
+
+
+#check what is inside the resulting file 
+summary(samp.image.3.mc3)
+
+#Add to the image the classification column
+samp.image.3 <- samp.image.3 %>%
+  mutate(mc3_class = samp.image.3.mc3$classification)
+
+#export to check what is inside and if the classification went well 
+
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag3_class.csv")
+
+
+
+#TRY WITH samp.image.4
+samp.image.4<- samp.image.4 %>%
+  mutate(id = row.names(samp.image.4))
+
+samp.image.4.mc3 <- Mclust(samp.image.4[["RGBI"]], G=2)
+samp.image.4 <- samp.image.4 %>%
+  mutate(mc3_class = samp.image.4.mc3$classification)
+write_csv(samp.image.4, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag4_class.csv")
+
+
+```
+
+Now run the 
+
+```{r mclustDF}
+
+# Model 3. I only use the RGBI index. No location (coordinates or slices). 2 clusters. Error 
+
+samp.list.df.mc3<- samp.list3 %>%
+  purrr::map(~Mclust(data = .x[["RGBI"]],
+                     G =2))
+
+samp.list3 <- samp.list3 %>%
+  purrr::map( ~dplyr::mutate(.,
+                             mc3_class = samp.list.df.mc3[[i]][["classification"]]))# this add a new column with mc3_class, but with the same values for all pictures, while I want that the each picture has his own correct classification. at this point the question is: is it better having a classification here but with most of the data wrong, or is is better to have done it in qgis but with hiher chances of having it correct? 
+
+        
+
+
+
+
+```
+#Visualize 
+
+```{r mclustDF}
+#Convert the dataframe to an sf spatial object 
+
+
+samp.image.3_sf <- st_as_sf(samp.image.3, coords = c("x", "y"))
+samp.image.3_sf
+
+str(samp.list3[1])
+```
+
+
+
