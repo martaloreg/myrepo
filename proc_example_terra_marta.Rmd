@@ -22,15 +22,17 @@ library(terra)
 library(rlist)
 ##LIBARY TRIAL
 ```
-
+#Import images
+At first import all images that are multiband into a list  
 ```{r listImages}
 #Tor
 #path <- "data/PrefFlow_Kenya/Data/Enhanced images"
 
 #Aida and me
 path <- "../data/Enhanced images/"
+#path <- "../data/Enhanced_images_reclas/"
 
-img.list <- lapply(list.files(path, pattern = ".*\\.tif$", full.names = T, recursive = T), rast) ## Multiband/stack
+img.list <- lapply(list.files(path, pattern = ".*\\.tif$", full.names = T, recursive = T), rast) ## Multiband/stack: lapply returns a list of the same length as X, each element of which is the result of applying FUN to the corresponding element of X.
 img.list.str <- list.files(path, pattern = ".*\\.tif$", full.names = T, recursive = T)
 
 # name list elements with the image names
@@ -40,9 +42,9 @@ names(img.list) <- gc_file
 img.list[1:10]
 ```
 
-### Calculate band ratios, etc and add to stack
+#Calculate band ratios,ONE IMAGE
 ```{r bandmathOneImage}
-img.proc <- img.list[[5]]
+img.proc <- img.list[[1]]
 names(img.proc) <- c("R","G","B","sum")
 
 img.proc$RBI <- (img.proc[[3]]-img.proc[[1]]) / (img.proc[[3]]+img.proc[[1]]+1)
@@ -55,16 +57,20 @@ image(img.proc$RGI, col=rainbow(256))
 image(img.proc$RGBI, col=rainbow(256))#THIS IS THE BEST ONE
 image(img.proc$GBI, col=rainbow(256))
 
-
+#writeRaster(img.list[1], "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Kubo_1_4.tif")
 
 ```
 
 Do the same for all the StackRaster objects in the list. In img.list[[i]][[j]], i is ith image in the list (out of 142 images) and j is the jth column or band within image i. Bands: 1 = R, 2= G, 3 = B, 4 = SUM(R,G,B).
-
+#BAND ratio ALL IMAGES
 Since my compuer was not running for all images, we run it in Aida's computer and the list resulting (all images with RBI, RGI, GBI, RGBI) has been exported in a RData file. 
 
 ```{r BandmathAllImages}
 
+for (i in 1:142) {
+ img.list[[i]]$RGBI <- (img.list[[i]][[3]]+img.list[[i]][[2]]-img.list[[i]][[1]]) / (img.list[[i]][[3]]+img.list[[i]][[2]]+img.list[[i]][[1]]+1)
+ 
+} #I run only this as it it the best and running all the other together it crushes
 
 for (i in 1:142) {
  img.list[[i]]$RBI <- (img.list[[i]][[3]]-img.list[[i]][[1]]) / (img.list[[i]][[3]]+img.list[[i]][[1]]+1)
@@ -78,16 +84,33 @@ for (i in 1:142) {
  img.list[[i]]$GBI <- (img.list[[i]][[2]]-img.list[[i]][[3]]) / (img.list[[i]][[2]]+img.list[[i]][[3]]+1)
 }
 
- for (i in 1:142) {
- img.list[[i]]$RGBI <- (img.list[[i]][[3]]+img.list[[i]][[2]]-img.list[[i]][[1]]) / (img.list[[i]][[3]]+img.list[[i]][[2]]+img.list[[i]][[1]]+1)
- 
-} #I run only this as it it the best and running all the other together it crushes
+```
 
+```{r}
+
+# export all the images in the list:
+for(i in 1: length(img.list)) {                              
+  write.csv(data.frame(img.list[[i]]),                              
+             file = paste0(             "/Users/martaloreggian/Desktop/PrefFlowKenya/Img_list/", names(img.list_df)[i], '.csv'))
+}
+
+# export all the images in the list as df:
+img.list_df <- img.list%>%
+  purrr::map(as.data.frame)
+
+#Set names of elements in the list
+img.list_df <- img.list_df %>%
+  purrr::map(~set_names(., c("R","G","B", "sum", "RGBI", "RBI", "RGI","GBI"))) 
 
 #check
 img.list[[5]]
 
-#save(img.list, file = "../data/List_bands_indices.RData")
+# export all the images in the list:
+for(i in 1: length(img.list_df)) {                              
+  write.csv(data.frame(img.list_df[[i]]),                              
+             file = paste0(             "/Users/martaloreggian/Desktop/PrefFlowKenya/Img_list/", names(img.list_df)[i], '.csv'))
+} #this script was found in :https://stackoverflow.com/questions/27594541/export-a-list-into-a-csv-or-txt-file-in-r
+
 
 ```
 
@@ -99,11 +122,9 @@ in this case there is no need of a division into slices, as the spatSample() fun
 
 ```{r SampONEImage}
 
-samp.image <- spatSample(img.list[[4]], 4000, method = "random", as.raster =TRUE, xy=TRUE)
+#here we are creating a sample group of points (which are 400), using the random method and saving them as dataframe. if you want to have it as points, you can write as.points instead of as.df. this is the general code:
+samp.image <- spatSample(img.list[[1]], 400, method = "random", as.df =TRUE, values =TRUE, xy=TRUE)
 
-image(samp.image$RGBI, col=rainbow(256))
-samp.image
-size(samp.image)
 
 #if I want as points
 samp.image.1 <- spatSample(img.list[[4]], 250, method = "random", as.points=TRUE, values =TRUE,   xy=TRUE)
@@ -115,20 +136,29 @@ write_csv(samp.image.1, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image.
 set.seed(123) #THIS IS IMPORTANT, as it alloweds to select always the same randompoints at this stage. having always the same random points selection helps with the check and further classification of stained-nonstained
 samp.image.3 <- spatSample(img.list[[4]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)
 
-samp.image.3 <- set_names(samp.image.3, c("x","y","R","G","B", "sum", "RGBI"))
-write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image.3.csv")
+samp.image.3 <- set_names(samp.image.3, c("x","y","R","G","B", "sum", "RGBI"))#change names
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image.3.csv")#save it and change  name of the sved file!!
 
-samp.image.4 <- spatSample(img.list[[5]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)
+
+#try with another image 
+
+samp.image.4 <- spatSample(img.list[["mumi_1_10.tif"]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)
 samp.image.4 <- set_names(samp.image.4, c("x","y","R","G","B", "sum", "RGBI"))
-write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.image_K_4_7.csv")
+write_csv(samp.image.4, "/Users/martaloreggian/Desktop/PrefFlowKenya/spat.[].csv")
 
-
+         
+#than_15_4
+img.list[114]#to understand which number of the list is the than_15_4
+set.seed(123)
+samp.image_than <- spatSample(img.list[["than_15_4.tif"]], 250, method = "random", as.df=TRUE, values =TRUE, xy=TRUE)#select random points
+samp.image_than <- set_names(samp.image_than, c("x","y","R","G","B", "sum", "RGBI"))#rename the column 
 
 ```
-Create a list with random points sampled from each image. 
+#Create a list with random points sampled from each image. 
 We want to select random points only from the RGBI indice, and not the others.
 The function used to create sampling points is spatSample. It alloweds to choose the method of point sampling (in this care we want it random), the number of points 
-```{r SampLISTImage}
+```{r SampLISTImage }
+
 library(rlist)
 #list_band_indices<- load("List_bands_indices.RData" )
 #load("List_bands_indices.RData")
@@ -138,16 +168,18 @@ library(rlist)
 #how to read these data???https://stackoverflow.com/questions/31893844/how-can-i-save-a-list-to-a-file-and-read-it-in-again-in-r
 
 
-samp.list1 <-  img.list %>%
+samp.list2 <-  img.list %>%
   purrr::map(~spatSample(., 
-             size =4000, 
+             size =400, 
               method = "random",
-             as.points=TRUE,
+             as.df=TRUE,
              values = TRUE,
              xy=TRUE
-             ))
+             ))#I can transform directly into df
+samp.list2 <- samp.list2 %>%
+  purrr::map(~set_names(., c("x","y","R","G","B", "sum", "RGBI")))
 
-#I can transform directly into df
+
 samp.list3<-  img.list %>%
   purrr::map(~spatSample(., 
              size =250, 
@@ -157,13 +189,15 @@ samp.list3<-  img.list %>%
              xy=TRUE
              ))
 samp.list3 <- samp.list3 %>%
-  purrr::map(~set_names(., c("x","y","R","G","B", "sum", "RGBI")))
+  purrr::map(~set_names(., c("x","y","R","G","B", "sum", "RGBI", "RBI","RGI", "GBI")))
 
 rlist::list.save(samp.list3, )
 
 #Check image
 #image(samp.list[[1]]$RGBI, col=rainbow(256))
 #image(samp.list[[5]]$RGBI, col=rainbow(256))
+
+
 
 samp.list[[5]]
 show(1)
@@ -180,13 +214,20 @@ samp.list.mat <- samp.list %>%
 
 #one other way might be to transform the spatRaster into DF:
 
-samp.list.mat_df<- samp.list.mat%>%
+samp.list3_df<- samp.list3%>%
   purrr::map(as.data.frame)
+
+#export ALL THE df which are the images as csv
+for(i in 1: length(samp.list3_df)) {                              
+  write.csv(data.frame(samp.list3_df[[i]]),                              
+             file = paste0(             "/Users/martaloreggian/Desktop/PrefFlowKenya/As_data_frame/", names(samp.list3_df)[i], '.csv'))
+} #this script was found in :https://stackoverflow.com/questions/27594541/export-a-list-into-a-csv-or-txt-file-in-r
 
 #change bands names in the df list
 
 samp.list.mat_df<- samp.list.mat_df%>%
   purrr::map(~set_names(., c("R","G","B", "sum", "RGBI")))
+
                     
 #VERIFY
 
@@ -209,21 +250,12 @@ try at first to use Mclust on one image
 
 samp.image.3 <-  samp.image.3 %>%
   mutate (id = row.names(samp.image.3))
-write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag3_ID.csv")
 
 str(samp.image.3)#this to see if actually the image was saved as df: correct
-
-
 
 #Apply mCLust. Model 3. I only use the RGBI index. No location (coordinates or slices). 2 clusters
 
 samp.image.3.mc3 <- Mclust(samp.image.3[["RGBI"]], G=2)
-
-#one other way to go, but the outcome is the same:
-#samp.image.3.mc3 <- Mclust(samp.image.3[["RGBI"]] %>%
- #                        select(7), 
-  #                      G = 2) #when I apply Mclust, the result is a list
-
 
 #check what is inside the resulting file 
 summary(samp.image.3.mc3)
@@ -231,11 +263,18 @@ summary(samp.image.3.mc3)
 #Add to the image the classification column
 samp.image.3 <- samp.image.3 %>%
   mutate(mc3_class = samp.image.3.mc3$classification)
-
 #export to check what is inside and if the classification went well 
+write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/mclust_oneimage/Kubo_10_10_mclust.csv")
 
-write_csv(samp.image.3, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag3_class.csv")
+#TRY WITH samp.image
+samp.image<- samp.image %>%
+  mutate(id = row.names(samp.image))
 
+samp.image.mc3 <- Mclust(samp.image[["RGBI"]], G=2)
+
+samp.image <- samp.image%>%
+  mutate(mc3_class = samp.image.mc3$classification)
+write_csv(samp.image, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/mclust_oneimage/Kubo_1_4_mclust.csv")
 
 
 #TRY WITH samp.image.4
@@ -245,33 +284,66 @@ samp.image.4<- samp.image.4 %>%
 samp.image.4.mc3 <- Mclust(samp.image.4[["RGBI"]], G=2)
 samp.image.4 <- samp.image.4 %>%
   mutate(mc3_class = samp.image.4.mc3$classification)
-write_csv(samp.image.4, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/Samp_imag4_class.csv")
+write_csv(samp.image.4, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/mclust_oneimage/mumi_1_10_mclust.csv")
+
+#try with than_15_4
+samp.image_than<- samp.image_than %>%
+  mutate(id = row.names(samp.image_than))
+samp.image_than.mc3 <- Mclust(samp.image_than[["RGBI"]], G=2)
+samp.image_than <- samp.image_than %>%
+  mutate(mc3_class = samp.image_than.mc3$classification)
+write_csv(samp.image_than, "/Users/martaloreggian/Desktop/PrefFlowKenya/data/mclust_oneimage/than_15_4_mclust.csv")
 
 
 ```
 
-Now run the 
+Now run the Mclust for all images
 
 ```{r mclustDF}
 
-# Model 3. I only use the RGBI index. No location (coordinates or slices). 2 clusters. Error 
+
+# First I give an ID to all the points
+
+for (i in 1:length(samp.list3)) {                              
+  mutate(id = row.names(samp.list3[[i]]))
+}   #Error in UseMethod("mutate") : no applicable method for 'mutate' applied to an object of class "character"    
+
+
+# Model 3. I only use the RGBI index. No location (coordinates or slices). 2 clusters. this works. here the mclus classify the RGBI band into 1 or 2
 
 samp.list.df.mc3<- samp.list3 %>%
   purrr::map(~Mclust(data = .x[["RGBI"]],
                      G =2))
 
+
+#add column with classification 
+#try with loop: this doesn't work
+                           
+ # summary(samp.list.df.mc3[[i]]$classification, data = samp.list.df.mc3)
+#}  
+
+
 samp.list3 <- samp.list3 %>%
   purrr::map( ~dplyr::mutate(.,
                              mc3_class = samp.list.df.mc3[[i]][["classification"]]))# this add a new column with mc3_class, but with the same values for all pictures, while I want that the each picture has his own correct classification. at this point the question is: is it better having a classification here but with most of the data wrong, or is is better to have done it in qgis but with hiher chances of having it correct? 
 
-        
+for (i in 1:lengh(samp.list3)) {                              
+  mutate(samp.list3[[i]], 
+         mc3_class= values(samp.list.df.mc3)[i]$classification)
+}     
+
+#export the classified points into different csv inside the same folder:this will be run once that the classification is fixed!!
+ for(i in 1: length(samp.list3)) {                              
+  write.csv(data.frame(samp.list3[[i]]),                              
+             file = paste0(             "/Users/martaloreggian/Desktop/PrefFlowKenya/As_data_frame/", names(samp.list3_df)[i], '.csv'))
+}       
 
 
 
 
 ```
 #Visualize 
-
+Here we visualize the classified image converting the df into a spatial object.
 ```{r mclustDF}
 #Convert the dataframe to an sf spatial object 
 
@@ -282,5 +354,275 @@ samp.image.3_sf
 str(samp.list3[1])
 ```
 
+
+##QGIS part
+
+Even if we managed to run Mclust for all images, the model on which it is based on doesn't allow to classify in a correct way the images. This because there are many differences in the pictures, and even increasing the n of points doesn't help. 
+Therefore, we choose to proceed working in QGIS using the Semi-Automatic classification plugin. This plugin allowes to work with multiband images,run a supervised classification and evaluate the classification output. 
+
+The procedure applied on qgis is as follow:
+- divide the multiband images in single bands (R, G, B, sum)
+- upload in the plugin the three bands and start to select the sampling areas (ROI) for the classification. Ideally select 5/6 areas for stain and 5/6 as non-stained, and roots/stones.
+- after having selected the ROIs, from Band processing >>Classification select the classification algorithm. We thought of using maximum likelihood, or in case minimum distance.
+- after having classified the image, from Postprocessing >>Accuracy we have to assess the accuracy of each classified image.
+
+The classified .tif file, which is one band image, is the input from this part onward. All the images will be saved in one folder and then used for the indices calculation.
+
+
+#Indices calculation 
+
+## Dye coverage curve
+
+At this part of the script we import the folder containing all the classifiedimages (they have one band now). The lapply function import the images as spatial raster. This allowes to keep the cells dimention and spatial distribution. 
+Then, the pixels have to be grouped in order to understand how deep the stain went.
+```{r}
+
+#at first import the folder with the images classified. these images are 1 band images, therefore 
+
+path_class <- "../classification_Example/"
+
+class_list <- lapply(list.files(path_class, pattern = ".*\\.tif$", full.names = T, recursive = T), rast) # list files 
+
+class_list_1 <- list.files(path_class, pattern = ".*\\.tif$", full.names = T, recursive = T)
+
+# name list elements with the image names
+class_file <- list.files(path = path_class, pattern = "*.tif")
+names(class_list) <- class_file
+
+class_list[1:3]#to check the images features
+
+image(class_list$`classification_traial 2.tif`)#to visualize how the classified image look like
+
+```
+Try with 1 image
+
+```{r DyeCurve One image}
+#value of the points in the raster 
+values(class_list$`classification_traial 2.tif`)
+#here I can see that the values given to the pics was only 1 or -1000. therefore, in this case i have three classes: -1000, 1 and 2
+
+
+#change 1 pic in df
+class_traial2_df <- as.data.frame(class_list$`classification_traial 2.tif`, xy= TRUE)
+
+class2_pred <- class_traial2_df%>%
+  mutate (depth = as.integer(y)-0.5) %>%  # pixels are grouped into 1 mm slices identified by their mid-point depth
+  mutate (pred_class = if_else( classification_traial.2 == 1, 1, 0)) # stained pixels are 1 and non-stained 0. 
+
+head(class2_pred)
+```
+
+
+```{r DyeCurve One image}
+#curve calculation
+class2_pred_stain <- class2_pred %>%
+  group_by(depth) %>%
+  summarise(dye_coverage = mean(pred_class)*100)%>%#
+  ungroup() %>%
+  arrange(desc(depth)) 
+
+head(class2_pred_stain)
+```
+
+
+```{r DyeCurve One image}
+#curve visualization 
+
+class2_pred_curve <- class2_pred_stain %>%
+  ggplot(aes (x = dye_coverage,
+              y = depth)) +
+  geom_point(alpha = 0.5,
+             col = "cadetblue4") +
+  ggplot2::theme_minimal() +
+  xlab("Dye coverage (%)") +
+  ylab("Depth (mm)") +
+  theme(axis.title.x = element_text(size = 9),
+        axis.title.y = element_text(size = 9))
+
+class2_pred_curve
+
+```
+
+
+Dye curve calculation for the list of classified images
+
+```{r DyeCurve all_images}
+
+#convert all rasters (meaning the classified pictures) into df. this allowed to have x,y and the classified column.
+classified_images_df <- class_list %>%
+  purrr::map (~terra::as.data.frame(., xy=TRUE)) #error "cannot coerce..." solved adding a tilde
+#rename the classificed column into classi
+
+
+#group pixels of the pictures and add a new column to the df (through the function mutate) called pred_class
+
+class_list_pred <- classified_images_df %>%
+  purrr::map(~dplyr::mutate(.x, depth=as.integer(y)-0.5)%>%# pixels are grouped into 1 mm slices identified by their mid-point depth
+               mutate(.x, pred_class =if_else( .x[3] == 1, 1, 0)))#stained pixels are 1 and non-stained 0. Since the name "classification_trial" change with the file name, here we apply the formula directly to the column indication the position sating.x[3] (it means all the column 3 of each df of the list)
+ 
+#check if the classification is correct 
+
+class_list_pred[["classification_traial 3.tif"]]
+
+```
+```{r curve calc}
+#curve calculation
+list_pred_stain <- class_list_pred %>%
+  purrr::map (~dplyr::group_by(.x["depth"]) %>%
+  summarise(.x, dye_coverage = mean(pred_class)*100)%>%
+  ungroup(.x) %>%
+  arrange(desc(depth)))
+
+list_pred_stain[["classification_traial 3.tif"]]
+
+list_pred_stain <- class_list_pred %>%
+  purrr::map (~dplyr::group_by(.x, depth)%>%
+               summarise(.x, dye_coverage = mean(.x, pred_class)*100))
+
+class_list_pred[["classification_traial.tif"]]
+
+```
+
+```{r}
+#visualize curve
+
+class2_pred_curve <- class2_pred_stain %>%
+  ggplot(aes (x = dye_coverage,
+              y = depth)) +
+  geom_point(alpha = 0.5,
+             col = "cadetblue4") +
+  ggplot2::theme_minimal() +
+  xlab("Dye coverage (%)") +
+  ylab("Depth (mm)") +
+  theme(axis.title.x = element_text(size = 9),
+        axis.title.y = element_text(size = 9))
+
+class2_pred_curve
+
+```
+
+## Indices of preferential flow
+
+
+```{r}
+
+# 1.Calculate mean dye coverage
+
+than_15_4_dc <- mean(than_15_4_df_pred$pred_class)*100
+
+# Calculate the depth at which dye coverage first decreases below 80% (i.e, uniform infiltration depth)
+
+than_15_4_UniFr <- than_15_4_stain %>%
+  mutate(threshold_80 = ifelse(dye_coverage < 80, 0, 1)) %>%
+  filter(threshold_80 == 0) %>%
+  select(depth) %>%
+  max() 
+
+# 2.Calculate the preferential flow fraction (fraction of the total infiltration that flows through preferential flow paths)
+
+  # Calculate the number of stained pixels within the uniform front depth
+
+than_15_4_uni_pix <- than_15_4_df_pred %>% 
+  mutate (uni = ifelse(y > than_15_4_UniFr, 1, 0)) %>%
+  group_by(uni) %>%
+  summarise(n.pixels = sum(pred_class)) # Number of stained and non-stained pixels within the uniform front depth
+
+than_15_4_uni_pix_st <- as.integer(than_15_4_uni_pix[2,2]) # Number of stained pixels within the uniform front depth
+
+  # Calculate the number of stained pixels within the entire profile
+
+than_15_4_pix <- than_15_4_df_pred %>% 
+  group_by(pred_class) %>%
+  summarise(n.pixels = sum(pred_class))
+
+than_15_4_pix_st <- as.integer(than_15_4_pix[2,2])
+
+  # Calculate the preferential flow fraction
+
+than_15_4_PFfr <- 100*(1-(than_15_4_uni_pix_st/than_15_4_pix_st))
+
+# 3.Calculate the length index 
+
+than_15_4_stain <- than_15_4_stain %>%
+  mutate(Li = 0)
+  
+for (i in 1:nrow(than_15_4_stain)-1) {
+  than_15_4_stain$Li[i] = than_15_4_stain$dye_coverage[i+1] - than_15_4_stain$dye_coverage[i]
+}
+
+than_15_4_LI <- sum(abs(than_15_4_stain$Li), na.rm = TRUE)
+
+# 4.Calculate the peak index
+
+than_15_4_stain <- than_15_4_stain %>%
+  mutate(meanDC = ifelse (dye_coverage >= than_15_4_dc, 1, 0)) %>%
+  mutate(intersection = roll_sum(meanDC, n = 2, fill = NA)) # If interesection is 2 or 0 then it means that there is no intersection, 1 means there is
+
+than_15_4_PI <- than_15_4_stain %>%
+  filter(intersection == 1) %>%
+  nrow()
+
+
+than_15_4_indices <- tibble(
+  "DC" = than_15_4_dc,
+  "UniFr" = than_15_4_UniFr,
+  "PFfr" = than_15_4_PFfr,
+  "LI" = than_15_4_LI,
+  "PI" = than_15_4_PI)
+  
+
+
+head(than_15_4_indices)
+
+```
+
+```{r}
+
+than_15_4_dc_curve <- than_15_4_dc_curve +
+  geom_vline (xintercept = than_15_4_dc) +
+  geom_hline (yintercept = than_15_4_UniFr)
+
+than_15_4_dc_dens <- than_15_4_df_pred %>%
+  filter (pred_class == 1) %>%
+  ggplot(aes(x = depth)) +
+  geom_density(fill = "cadetblue4",
+               col = "cadetblue4",
+               alpha = 0.6) +
+  ggplot2::theme_minimal() +
+  xlab("") +
+  theme(axis.title.x = element_text(size = 9)) +
+  coord_flip()
+
+than_15_4_tbl <- than_15_4_indices %>%
+  t() %>%
+  as.data.frame() %>%
+  round(digits = 1)
+
+names(than_15_4_tbl) <- c("Indices")
+
+than_15_4_ggtbl <- ggtexttable(than_15_4_tbl, theme = ttheme("blank"))
+
+than_15_4_ggtbl_h <- ggtexttable(than_15_4_indices %>%
+                                   round(digits = 1),
+                                 rows = NULL,
+                                 theme = ttheme("blank"))
+
+grid.arrange(plot_than_15_4_pred,
+             than_15_4_dc_curve,
+             than_15_4_dc_dens,
+             than_15_4_ggtbl,
+             nrow = 1)
+
+than_15_4_plot_up <- plot_grid(plot_than_15_4_pred,
+                               than_15_4_dc_curve,
+                               than_15_4_dc_dens,
+                               nrow = 1)
+
+than_15_4_plot <- ggdraw() +
+  draw_plot(than_15_4_plot_up, x = 0, y = 0.3, width = 1, height = 0.7) +
+  draw_plot (than_15_4_ggtbl_h, x = 0.3, y = 0, width = 0.5, height = 0.2)
+
+
+```
 
 
